@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sonic Runner | Modern Platformer</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&display=swap" rel="stylesheet">
+    <link rel="manifest" href="manifest.json">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#1b4dff">
+    <meta name="description" content="Um jogo de plataforma moderno inspirado no Sonic, feito com JavaScript e CSS premium.">
+</head>
+<body>
+    <div id="game-container">
+        <header id="game-ui">
+            <div class="stats glass">
+                <div class="score-stat">
+                    <span id="score-label">SCORE</span>
+                    <span id="score-count">0</span>
+                </div>
+                <div class="time-stat">
+                    <span id="time-label">TIME</span>
+                    <span id="time-count">0:00</span>
+                </div>
+                <div class="ring-stat">
+                    <span id="rings-label">RINGS</span>
+                    <span id="rings-count">0</span>
+                </div>
+            </div>
+        </header>
+
+        <canvas id="gameCanvas"></canvas>
+
+        <div id="start-screen" class="overlay glass">
+            <h1>SONIC <span class="accent">RUNNER</span></h1>
+            <p>Pressione <span class="key">ESPAÇO</span> para começar</p>
+            <div class="controls-hint">
+                <span>AD / Setas: Mover</span>
+                <span>W / Espaço: Pular</span>
+            </div>
+            <button id="start-btn">INICIAR JOGO</button>
+        </div>
+
+        <div id="death-screen" class="overlay glass hidden">
+            <h2>FIM DE JOGO</h2>
+            <p>Você coletou <span id="final-rings">0</span> anéis!</p>
+            <button id="restart-btn">TENTAR NOVAMENTE</button>
+        </div>
+
+        <!-- Mobile Controls (Hidden on Desktop via CSS) -->
+        <div id="mobile-ui">
+            <div id="dpad" class="glass">
+                <button id="btn-left" class="joy-btn">◀</button>
+                <button id="btn-right" class="joy-btn">▶</button>
+            </div>
+            <div id="actions">
+                <button id="btn-jump" class="joy-btn jump-btn">JUMP</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>
