@@ -10,7 +10,7 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Create PWA APK
-        uses: sharadcodes/pwa-to-apk-action@v1.0.0
+        uses: sharadcodes/pwa-to-apk-action@v1
         with:
           web_url: 'https://delsonbon-png.github.io/sonic-runner-mobile/'
           app_name: 'Sonic Runner Mobile'
