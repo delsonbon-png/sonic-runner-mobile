@@ -9,7 +9,7 @@
     "orientation": "landscape",
     "icons": [
         {
-            "src": "https://cdn.pixabay.com/photo/2021/08/21/14/51/hedgehog-6562846_1280.png",
+            "src": "icon.png",
             "sizes": "512x512",
             "type": "image/png",
             "purpose": "any maskable"
