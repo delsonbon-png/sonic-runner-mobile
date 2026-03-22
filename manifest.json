@@ -1,17 +1,22 @@
 {
     "name": "Sonic Runner Mobile",
     "short_name": "Sonic",
-    "version": "1.0.0",
+    "description": "Um jogo de plataforma moderno inspirado no Sonic, feito com JavaScript e CSS premium.",
+    "id": "com.sonic.runner.mobile",
     "start_url": "index.html",
     "display": "fullscreen",
     "background_color": "#030a1c",
     "theme_color": "#1b4dff",
     "orientation": "landscape",
+    "categories": [
+        "games",
+        "entertainment"
+    ],
     "icons": [
         {
-            "src": "icon.png",
+            "src": "icon.jpg",
             "sizes": "512x512",
-            "type": "image/png",
+            "type": "image/jpeg",
             "purpose": "any maskable"
         }
     ]
