@@ -1,0 +1,22 @@
+name: Build Sonic APK
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Create PWA APK
+        uses: sharadcodes/pwa-to-apk-action@v2
+        with:
+          web_url: 'https://delsonbon-png.github.io/sonic-runner-mobile/'
+          app_name: 'Sonic Runner Mobile'
+
+      - name: Upload APK as Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: sonic-apk
+          path: output/*.apk
