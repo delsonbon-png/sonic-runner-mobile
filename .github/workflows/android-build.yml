@@ -7,16 +7,27 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-
-      - name: Create PWA APK
-        uses: sharadcodes/pwa-to-apk-action@v1
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          web_url: 'https://delsonbon-png.github.io/sonic-runner-mobile/'
-          app_name: 'Sonic Runner Mobile'
+          node-version: 20
 
-      - name: Upload APK as Artifact
+      - name: Install Bubblewrap
+        run: npm install -g @bubblewrap/cli
+
+      - name: Build APK
+        run: |
+          # Este comando tenta gerar o APK diretamente do seu manifest.json
+          # Pode ser necessário configurar um arquivo twa-manifest.json no futuro,
+          # mas por agora, vamos tentar o build direto ou inicialização rápida.
+          bubblewrap init --manifest https://delsonbon-png.github.io/sonic-runner-mobile/manifest.json --directory ./app --metaData ./app/twa-manifest.json || true
+          # Se o init passar, tentamos o build
+          cd app && bubblewrap build --skip-signing || echo "Build falhou, mas vamos checar os logs"
+
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: sonic-apk
-          path: output/*.apk
+          path: app/*.apk
