@@ -22,7 +22,7 @@ const CONFIG = {
     sonicColor: '#242490',
     skinColor: '#fcb490',
     ringColor: '#ffff00',
-    goalDistance: 5000 
+    goalDistance: 2000 // Restored for normal ring/enemy spawning
 };
 
 const particles = [];
@@ -86,7 +86,7 @@ const SFX = {
 
 // State
 let gameState = 'START'; // START, PLAYING, GAMEOVER, WON, SPECIAL, MARBLE
-let currentLevel = 'GREEN_HILL'; // GREEN_HILL, MARBLE
+let currentLevel = 'GREEN_HILL'; // GREEN_HILL, MARBLE, CHEMICAL_PLANT
 let score = 0;
 let rings = 0;
 let distance = 0;
@@ -98,6 +98,11 @@ let specialStageRotation = 0;
 let boss = null;
 let hasEmerald = false;
 let emeraldScale = 1;
+let transitionTimeout = null;
+let nextLevelCallback = null;
+let selectedChar = 'SONIC'; // SONIC, TAILS, KNUCKLES, AMY, SONIC_TAILS
+const charSelectionScreen = document.getElementById('char-selection');
+const followerPositionHistory = []; // For Sonic & Tails mode
 
 // Player
 const player = {
@@ -127,6 +132,35 @@ const player = {
         this.invincible = 0;
         this.jumps = 0;
         this.rotation = 0;
+
+        // Set character-specific stats
+        if (selectedChar === 'SONIC') {
+            this.color = '#242490';
+            this.maxSpeed = 12;
+            this.jumpForce = -16;
+            this.maxJumps = 2;
+        } else if (selectedChar === 'TAILS') {
+            this.color = '#ffd100';
+            this.maxSpeed = 10;
+            this.jumpForce = -17;
+            this.maxJumps = 3; // Extra jump for "flying"
+        } else if (selectedChar === 'KNUCKLES') {
+            this.color = '#e63946';
+            this.maxSpeed = 14; // Faster runner
+            this.jumpForce = -14; // Lower jump
+            this.maxJumps = 2;
+        } else if (selectedChar === 'AMY') {
+            this.color = '#ff92c3'; // Pink
+            this.maxSpeed = 11;
+            this.jumpForce = -15;
+            this.maxJumps = 2;
+        } else if (selectedChar === 'SONIC_TAILS') {
+            this.color = '#242490';
+            this.maxSpeed = 12;
+            this.jumpForce = -16;
+            this.maxJumps = 2;
+            followerPositionHistory.length = 0;
+        }
     },
 
     update() {
@@ -142,7 +176,7 @@ const player = {
         }
 
         // Limit speed
-        this.vx = Math.max(-CONFIG.maxSpeed, Math.min(CONFIG.maxSpeed, this.vx));
+        this.vx = Math.max(-this.maxSpeed, Math.min(this.maxSpeed, this.vx));
         
         // Gravity
         this.vy += CONFIG.gravity;
@@ -151,40 +185,64 @@ const player = {
         this.x += this.vx;
         this.y += this.vy;
 
-        // Level Collision with Holes check
+        // Level Collision (Floor, Holes, Platforms)
         const groundY = canvas.height - 128 - this.height;
-        let onSolidGround = true;
-        
-        // Find if we are over a hole or lava
+        let isLanding = false;
+        let onHole = false;
+
+        // Check Chunks for Holes and Platforms
         chunks.forEach(chunk => {
             if (this.x + this.width > chunk.x && this.x < chunk.x + chunk.width) {
+                // Holes/Lava
                 chunk.holes.forEach(hole => {
                     const px = this.x + this.width/2;
                     if (px > hole.x && px < hole.x + hole.w) {
                         if (hole.lava && this.y >= groundY - 10) {
                             this.takeDamage();
                         } else {
-                            onSolidGround = false;
+                            onHole = true;
+                        }
+                    }
+                });
+
+                // Platforms (One-way)
+                chunk.platforms.forEach(plat => {
+                    if (this.x + this.width > plat.x && this.x < plat.x + plat.w) {
+                        const platTop = plat.y - this.height;
+                        const prevY = this.y - this.vy;
+                        // If falling and was above top before movement, and now is at/below top
+                        if (this.vy >= 0 && prevY <= platTop && this.y >= platTop) {
+                            this.y = platTop;
+                            this.vy = 0;
+                            isLanding = true;
                         }
                     }
                 });
             }
         });
 
-        if (this.y > groundY && onSolidGround) {
-            this.y = groundY;
-            this.vy = 0;
+        // Floor Collision
+        if (!isLanding && this.y >= groundY) {
+            if (!onHole) {
+                this.y = groundY;
+                this.vy = 0;
+                isLanding = true;
+            }
+        }
+
+        if (isLanding) {
             this.grounded = true;
             this.jumps = 0;
         } else {
             this.grounded = false;
         }
 
-        // Rolling Rotation
-        if (this.vx !== 0) {
-            this.rotation += this.vx * 0.05;
+        // Record position for follower
+        if (selectedChar === 'SONIC_TAILS' && gameState === 'PLAYING') {
+            followerPositionHistory.push({ x: this.x, y: this.y, facing: this.facing, rot: this.rotation });
+            if (followerPositionHistory.length > 20) followerPositionHistory.shift();
         }
-        
+
         // Check if dead (falling out of world)
         if (this.y > canvas.height) endGame();
     },
@@ -220,7 +278,7 @@ const player = {
 
         // Speed Trail
         if (Math.abs(this.vx) > 8) {
-            ctx.fillStyle = 'rgba(27, 77, 255, 0.2)';
+            ctx.fillStyle = this.color + '44'; // Add transparency
             ctx.beginPath();
             ctx.arc(this.x + this.width/2 - this.vx * 2, this.y + this.height/2, 24, 0, Math.PI * 2);
             ctx.fill();
@@ -234,23 +292,44 @@ const player = {
         ctx.rotate(this.rotation);
 
         // Core Body
-        ctx.fillStyle = CONFIG.sonicColor;
+        ctx.fillStyle = this.color;
         ctx.beginPath();
         ctx.arc(0, 0, 24, 0, Math.PI * 2);
         ctx.fill();
 
-        // Quills
+        // Character Features (Quills/Tails/Dreads)
         ctx.beginPath();
-        ctx.moveTo(-10, -20);
-        ctx.lineTo(-30, -15);
-        ctx.lineTo(-20, 0);
-        ctx.lineTo(-30, 10);
-        ctx.lineTo(-10, 5);
+        if (selectedChar === 'SONIC') {
+            ctx.moveTo(-10, -20);
+            ctx.lineTo(-30, -15);
+            ctx.lineTo(-20, 0);
+            ctx.lineTo(-30, 10);
+            ctx.lineTo(-10, 5);
+        } else if (selectedChar === 'TAILS') {
+            // Two Tails
+            ctx.moveTo(-10, 0);
+            ctx.quadraticCurveTo(-40, -20, -30, 20);
+            ctx.moveTo(-5, 5);
+            ctx.quadraticCurveTo(-35, 30, -20, 40);
+        } else if (selectedChar === 'KNUCKLES') {
+            // Dreadlocks
+            ctx.moveTo(-5, -15);
+            ctx.lineTo(-25, 0);
+            ctx.lineTo(-25, 30);
+            ctx.lineTo(-10, 25);
+        } else if (selectedChar === 'AMY' || (selectedChar === 'SONIC_TAILS' && false)) {
+            // Amy's Hair/Headband
+            ctx.moveTo(-10, -15);
+            ctx.quadraticCurveTo(-30, 0, -10, 25);
+            ctx.strokeStyle = '#e63946'; // Red headband
+            ctx.lineWidth = 4;
+            ctx.stroke();
+        }
         ctx.closePath();
         ctx.fill();
 
         // Belly (Tan)
-        ctx.fillStyle = CONFIG.skinColor;
+        ctx.fillStyle = selectedChar === 'AMY' ? '#ffccd5' : CONFIG.skinColor;
         ctx.beginPath();
         ctx.ellipse(5, 5, 12, 16, 0.1, 0, Math.PI * 2);
         ctx.fill();
@@ -272,7 +351,7 @@ const player = {
         ctx.fill();
 
         // Ears
-        ctx.fillStyle = CONFIG.sonicColor;
+        ctx.fillStyle = this.color;
         ctx.beginPath();
         ctx.moveTo(-5, -20);
         ctx.lineTo(-15, -35);
@@ -295,6 +374,12 @@ const player = {
         
         ctx.restore();
 
+        // Draw Follower (Tails)
+        if (selectedChar === 'SONIC_TAILS' && followerPositionHistory.length > 15) {
+            const data = followerPositionHistory[0];
+            drawCharacter(data.x, data.y, '#ffd100', data.facing, data.rot, 'TAILS');
+        }
+
         // Draw Shield
         if (this.hasShield) {
             ctx.strokeStyle = 'rgba(76, 201, 240, 0.6)';
@@ -307,6 +392,47 @@ const player = {
         }
     }
 };
+
+function drawCharacter(x, y, color, facing, rotation, charType) {
+    ctx.save();
+    ctx.translate(x + 24, y + 24);
+    ctx.rotate(rotation);
+
+    // Body
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(0, 0, 24, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Features
+    ctx.beginPath();
+    if (charType === 'TAILS') {
+        ctx.moveTo(-10, 0);
+        ctx.quadraticCurveTo(-40, -20, -30, 20);
+        ctx.moveTo(-5, 5);
+        ctx.quadraticCurveTo(-35, 30, -20, 40);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    // Belly
+    ctx.fillStyle = CONFIG.skinColor;
+    ctx.beginPath();
+    ctx.ellipse(5, 5, 12, 16, 0.1, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Eyes
+    ctx.fillStyle = 'white';
+    ctx.beginPath();
+    ctx.arc(10 * facing, -5, 12, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'black';
+    ctx.beginPath();
+    ctx.arc(14 * facing, -8, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+}
 
 // Input
 const keys = {};
@@ -325,7 +451,7 @@ function handleKeyDown(e) {
             SFX.jump();
         }
         if (gameState === 'PLAYING' && player.jumps < player.maxJumps) {
-            player.vy = CONFIG.jumpForce;
+            player.vy = player.jumpForce;
             player.jumps++;
             player.grounded = false;
             if (player.jumps > 1) player.rotation += Math.PI;
@@ -422,6 +548,7 @@ class Chunk {
         this.enemies = [];
         this.monitors = [];
         this.holes = [];
+        this.platforms = [];
         this.hasSign = false;
         this.hasGiantRing = false;
         this.generate();
@@ -441,9 +568,18 @@ class Chunk {
         }
 
         if (this.x >= CONFIG.goalDistance && !goalReached) {
-            if (currentLevel === 'MARBLE_ZONE' && !boss) {
+            if (!boss) { // Now both GH and Marble can have boss
                 this.hasBoss = true;
                 this.bossTriggerX = this.x + 400;
+                
+                // Add floating platforms/ledges for the boss fight (as requested)
+                if (currentLevel === 'MARBLE_ZONE') {
+                    // Two land masses with a lava hole in the middle
+                    this.holes.push({ x: this.bossTriggerX + 300, w: 600, lava: true });
+                } else {
+                    this.platforms.push({ x: this.bossTriggerX + 100, y: canvas.height - 300, w: 120, h: 30 });
+                    this.platforms.push({ x: this.bossTriggerX + 800, y: canvas.height - 300, w: 120, h: 30 });
+                }
             } else {
                 this.hasSign = true;
                 this.signX = this.x + 500;
@@ -509,27 +645,31 @@ class Chunk {
         
         for (let gx = 0; gx < this.width; gx += tileSize) {
             const worldX = this.x + gx;
-            let inHole = false;
+            let drawCheckers = true;
             this.holes.forEach(h => {
                 if (worldX >= h.x && worldX < h.x + h.w) {
                     if (h.lava) {
-                        ctx.fillStyle = '#ff793f'; // Red Lava
+                        ctx.fillStyle = currentLevel === 'CHEMICAL_PLANT' ? '#9b59b6' : '#ff793f'; // Purple Liquid for Chemical
                         ctx.fillRect(worldX, groundY, tileSize, tileSize);
-                        ctx.fillStyle = '#ffb142'; // Lava top
+                        ctx.fillStyle = currentLevel === 'CHEMICAL_PLANT' ? '#8e44ad' : '#ffb142';
                         ctx.fillRect(worldX, groundY, tileSize, 10);
+                        drawCheckers = false;
+                    } else {
+                        drawCheckers = false; // It's a hole, skip checkers
                     }
-                    inHole = !h.lava; // If lava, we draw it as a block you hit. If hole, we skip.
                 }
             });
-            if (inHole) continue;
+            if (!drawCheckers) continue;
 
             for (let gy = groundY; gy < canvas.height; gy += tileSize) {
                 const isEven = ((gx+this.x)/tileSize + gy/tileSize) % 2 === 0;
                 
                 if (currentLevel === 'GREEN_HILL') {
                     ctx.fillStyle = isEven ? '#6E2C00' : '#AA4300';
-                } else {
+                } else if (currentLevel === 'MARBLE_ZONE') {
                     ctx.fillStyle = isEven ? '#2d3436' : '#636e72'; // Dark Bricks for Marble Zone
+                } else if (currentLevel === 'CHEMICAL_PLANT') {
+                    ctx.fillStyle = isEven ? '#2980b9' : '#3498db'; // Blue/Dark Blue for Chemical
                 }
                 
                 ctx.fillRect(this.x + gx, gy, tileSize, tileSize);
@@ -545,14 +685,30 @@ class Chunk {
                             ctx.lineTo(this.x + gx + x + 16, gy + 12);
                         }
                         ctx.fill();
-                    } else {
+                    } else if (currentLevel === 'MARBLE_ZONE') {
                         ctx.fillStyle = '#e67e22'; // Lava/Dirt top for Marble
+                        ctx.fillRect(this.x + gx, gy, tileSize, 8);
+                    } else if (currentLevel === 'CHEMICAL_PLANT') {
+                        ctx.fillStyle = '#f1c40f'; // Yellow pipe edges for Chemical
                         ctx.fillRect(this.x + gx, gy, tileSize, 8);
                     }
                 }
             }
         }
         
+        // Draw Platforms
+        this.platforms.forEach(plat => {
+            const isGH = currentLevel === 'GREEN_HILL';
+            ctx.fillStyle = isGH ? '#AA4300' : '#444';
+            ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
+            ctx.fillStyle = isGH ? '#00AE00' : '#888';
+            ctx.fillRect(plat.x, plat.y, plat.w, 8); // Top grass/metal
+            
+            // Platform "floating" look
+            ctx.fillStyle = 'rgba(0,0,0,0.2)';
+            ctx.fillRect(plat.x, plat.y + plat.h, plat.w, 10);
+        });
+
         // Draw Rings
         this.rings.forEach(ring => {
             if (!ring.collected) {
@@ -567,12 +723,30 @@ class Chunk {
         });
 
         // Draw Spikes
-        ctx.fillStyle = '#457b9d';
         this.spikes.forEach(spike => {
+            // Shadow
+            ctx.fillStyle = 'rgba(0,0,0,0.3)';
+            ctx.fillRect(spike.x + 5, spike.y + spike.h - 5, spike.w, 5);
+
+            // Spike Body (Metallic Silver)
+            ctx.fillStyle = '#ecf0f1';
+            ctx.strokeStyle = '#2c3e50';
+            ctx.lineWidth = 2;
+            
             ctx.beginPath();
             ctx.moveTo(spike.x, spike.y + spike.h);
             ctx.lineTo(spike.x + spike.w/2, spike.y);
             ctx.lineTo(spike.x + spike.w, spike.y + spike.h);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Shine
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.moveTo(spike.x + spike.w/2, spike.y + 5);
+            ctx.lineTo(spike.x + spike.w/2 + 5, spike.y + 15);
+            ctx.lineTo(spike.x + spike.w/2 - 5, spike.y + 15);
             ctx.fill();
         });
 
@@ -661,12 +835,19 @@ const camera = {
     update() {
         const targetX = player.x - canvas.width / 3;
         this.x += (targetX - this.x) * CONFIG.cameraLerp;
+    },
+    reset() {
+        this.x = 0;
+        this.y = 0;
     }
 };
 
 function startGame() {
+    if (transitionTimeout) clearTimeout(transitionTimeout);
+    nextLevelCallback = null;
     gameState = 'PLAYING';
     startScreen.classList.add('hidden');
+    charSelectionScreen.classList.add('hidden');
     deathScreen.classList.add('hidden');
     rings = 3; 
     score = 0;
@@ -676,6 +857,7 @@ function startGame() {
     signRotation = 0;
     boss = null;
     player.reset();
+    camera.reset();
     chunks.length = 0;
     chunks.push(new Chunk(0));
     chunks.push(new Chunk(1200));
@@ -689,17 +871,35 @@ function endGame() {
     gameState = 'GAMEOVER';
     lastGameOverTime = Date.now();
     deathScreen.classList.remove('hidden');
+    document.getElementById('restart-btn').classList.remove('hidden');
+    
+    // Reset death screen text in case it was changed to victory message
+    deathScreen.querySelector('h2').textContent = "FIM DE JOGO";
+    deathScreen.querySelector('p').innerHTML = `Você coletou <span id="final-rings">${rings}</span> anéis!`;
+    
     document.getElementById('final-rings').textContent = rings;
 }
 
-function winGame() {
-    if (rings >= 25) {
-        // Special Stage logic (Giant Ring handles entry)
-        // Sonic Got Through message can appear here
+function winGame(isFromGiantRing = false) {
+    // Determine next level
+    let nextLevelFn = startMarbleZone;
+    let nextLevelName = "MARBLE ZONE";
+    
+    if (currentLevel === 'MARBLE_ZONE') {
+        nextLevelFn = startChemicalPlant;
+        nextLevelName = "CHEMICAL PLANT";
+    } else if (currentLevel === 'CHEMICAL_PLANT') {
+        nextLevelFn = () => { currentLevel = 'GREEN_HILL'; startGame(); };
+        nextLevelName = "GREEN HILL";
+    }
+
+    if (isFromGiantRing || rings >= 25) {
+        nextLevelCallback = nextLevelFn;
         showVictoryMessage("SONIC GOT THROUGH!", "ENTRANDO NO SPECIAL STAGE...");
+        setTimeout(startSpecialStage, 2000);
     } else {
-        showVictoryMessage("SONIC GOT THROUGH!", "PRÓXIMA ZONA: MARBLE ZONE");
-        setTimeout(startMarbleZone, 4000); // 4 second delay
+        showVictoryMessage("SONIC GOT THROUGH!", "PRÓXIMA ZONA: " + nextLevelName);
+        transitionTimeout = setTimeout(nextLevelFn, 4000);
     }
 }
 
@@ -733,6 +933,13 @@ function startMarbleZone() {
     startGame();
 }
 
+function startChemicalPlant() {
+    currentLevel = 'CHEMICAL_PLANT';
+    gameState = 'PLAYING';
+    document.getElementById('restart-btn').classList.remove('hidden');
+    startGame();
+}
+
 function resize() {
     canvas.width = window.innerWidth;
     canvas.height = Math.min(window.innerHeight, 800); // Max height limit for stability
@@ -748,8 +955,18 @@ window.addEventListener('resize', resize);
 resize();
 
 // UI Button Listeners
-document.getElementById('start-btn').onclick = startGame;
-document.getElementById('restart-btn').onclick = startGame;
+document.getElementById('start-btn').onclick = () => {
+    startScreen.classList.add('hidden');
+    charSelectionScreen.classList.remove('hidden');
+};
+
+document.getElementById('select-sonic').onclick = () => { selectedChar = 'SONIC'; currentLevel = 'GREEN_HILL'; startGame(); };
+document.getElementById('select-sonic-tails').onclick = () => { selectedChar = 'SONIC_TAILS'; currentLevel = 'GREEN_HILL'; startGame(); };
+document.getElementById('select-tails').onclick = () => { selectedChar = 'TAILS'; currentLevel = 'GREEN_HILL'; startGame(); };
+document.getElementById('select-knuckles').onclick = () => { selectedChar = 'KNUCKLES'; currentLevel = 'GREEN_HILL'; startGame(); };
+document.getElementById('select-amy').onclick = () => { selectedChar = 'AMY'; currentLevel = 'GREEN_HILL'; startGame(); };
+
+document.getElementById('restart-btn').onclick = startGame; // Restart at current level
 
 function update() {
     if (gameState === 'SPECIAL') {
@@ -802,7 +1019,7 @@ function update() {
             hasEmerald = true;
             score += 10000;
             SFX.ring();
-            setTimeout(startMarbleZone, 2000);
+            setTimeout(nextLevelCallback || startMarbleZone, 2000);
         }
 
         return;
@@ -811,9 +1028,63 @@ function update() {
     if (boss) {
         // Boss AI
         if (boss.state === 'PATROL') {
-            boss.vy = Math.sin(Date.now() / 300) * 3;
-            boss.x += (player.x + 200 - boss.x) * 0.05;
-            boss.y += (canvas.height/2 - 100 - boss.y) * 0.05;
+            const time = Date.now();
+            
+            if (currentLevel === 'MARBLE_ZONE') {
+                // Marble Zone Boss AI: Hover over the lava arena
+                const arenaX = boss.arenaX;
+                const cycle = (time / 3000) % 2; // Fixed 6 second cycle
+                
+                if (cycle < 0.35) {
+                    boss.vx = 5; // Move Right
+                    boss.isFiring = false;
+                } else if (cycle < 0.5) {
+                    boss.vx = 0; // Fire
+                    boss.isFiring = true;
+                    if (time % 100 < 50) spawnExplosion(boss.x, boss.y + 100, '#ff793f', 1);
+                } else if (cycle < 0.85) {
+                    boss.vx = -5; // Move Left
+                    boss.isFiring = false;
+                } else if (cycle < 1.0) {
+                    boss.vx = 0; // Fire
+                    boss.isFiring = true;
+                    if (time % 100 < 50) spawnExplosion(boss.x, boss.y + 100, '#ff793f', 1);
+                } else {
+                    // Follow player or idle near arena center
+                    const tx = (player.x + 100 < arenaX + 400) ? player.x + 100 : arenaX + 400;
+                    boss.vx = (tx - boss.x) * 0.1;
+                    boss.isFiring = false;
+                }
+                
+                // Hard boundaries to prevent AI from escaping screen
+                if (boss.x < boss.triggerX - 100) boss.vx = 5;
+                if (boss.x > boss.triggerX + 1100) boss.vx = -5;
+                
+                boss.y += (canvas.height/2 - 200 - boss.y) * 0.1;
+            } else {
+                boss.vy = Math.sin(time / 300) * 3;
+                boss.vx = Math.sin(time / 1200) * 5; // Sideways movement
+                boss.y += (canvas.height/2 - 150 - boss.y) * 0.05;
+            }
+            
+            boss.x += boss.vx;
+
+            // --- Mace Physics (Calculated even if HIT so it doesn't vanish/glitch) ---
+            if (currentLevel === 'GREEN_HILL') {
+                const time = Date.now();
+                boss.swingAngle = Math.sin(time / 800) * Math.PI / 1.8;
+                boss.ballX = boss.x;
+                boss.ballY = boss.y + 60;
+                boss.maceX = boss.ballX + Math.sin(boss.swingAngle) * 160;
+                boss.maceY = boss.ballY + Math.cos(boss.swingAngle) * 160;
+
+                // Ball Collision (Damage Player)
+                const dx = player.x + player.width/2 - boss.maceX;
+                const dy = player.y + player.height/2 - boss.maceY;
+                if (Math.sqrt(dx*dx + dy*dy) < 55 && player.invincible <= 0 && boss.state !== 'DEAD') {
+                    player.takeDamage();
+                }
+            }
         } else if (boss.state === 'HIT') {
             boss.x += 10;
             boss.y -= 5;
@@ -931,9 +1202,9 @@ function update() {
             }
         }
 
-        // Dynamically enable Giant Ring if conditions are met
-        if (chunk.hasSign && rings >= 25) {
-            chunk.hasGiantRing = true;
+        // Dynamically enable Giant Ring near the sign only if rings >= 25
+        if (chunk.hasSign) {
+            chunk.hasGiantRing = (rings >= 25);
         }
 
         // Spawn Boss Trigger
@@ -946,7 +1217,14 @@ function update() {
                     state: 'PATROL',
                     hitTimer: 0,
                     w: 120,
-                    h: 120
+                    h: 120,
+                    swingAngle: 0,
+                    maceX: 0,
+                    maceY: 0,
+                    ballX: 0,
+                    ballY: 0,
+                    triggerX: chunk.bossTriggerX,
+                    arenaX: chunk.bossTriggerX + 600
                 };
             }
         }
@@ -958,12 +1236,25 @@ function update() {
             const dist = Math.sqrt(dx*dx + dy*dy);
             
             if (dist < 80) {
-                if (player.vy > 0 && player.y < boss.y + 20 && boss.state !== 'HIT') {
+                let isHit = false;
+                if (currentLevel === 'MARBLE_ZONE') {
+                    // Hit from BELOW (as requested)
+                    if (player.vy < 0 && player.y > boss.y + 40 && boss.state !== 'HIT') {
+                        isHit = true;
+                    }
+                } else {
+                    // Hit from TOP (GH / Others)
+                    if (player.vy > 0 && player.y < boss.y + 20 && boss.state !== 'HIT') {
+                        isHit = true;
+                    }
+                }
+
+                if (isHit) {
                     // Hit Boss
                     boss.health--;
                     boss.state = 'HIT';
                     boss.hitTimer = Date.now();
-                    player.vy = -12;
+                    player.vy = currentLevel === 'MARBLE_ZONE' ? 5 : -12; // Bounce down if hit from below
                     SFX.bossHit();
                     spawnExplosion(boss.x, boss.y + 60, '#ffffff', 15);
                     if (boss.health <= 0) {
@@ -987,7 +1278,7 @@ function update() {
             const dx = player.x + player.width/2 - chunk.giantRingX;
             const dy = player.y + player.height/2 - chunk.giantRingY;
             if (Math.sqrt(dx*dx + dy*dy) < 100) {
-                startSpecialStage();
+                winGame(true); // Trigger Special Stage + Next Level
             }
         }
     });
@@ -1065,12 +1356,12 @@ function draw() {
             ctx.restore();
         }
 
-        // --- Sonic (Ball Form) ---
+        // --- Character (Ball Form) ---
         ctx.restore();
         ctx.save();
         ctx.translate(canvas.width/2 + player.x, canvas.height/2 + player.y);
         ctx.rotate(Date.now() / 50); // Fast spinning
-        ctx.fillStyle = CONFIG.sonicColor;
+        ctx.fillStyle = player.color;
         ctx.beginPath();
         ctx.arc(0, 0, 24, 0, Math.PI * 2);
         ctx.fill();
@@ -1101,10 +1392,15 @@ function draw() {
         sky.addColorStop(0.4, '#8EE2FF');
         sky.addColorStop(0.6, '#00C2FF');
         sky.addColorStop(1, '#004A7F');
-    } else {
+    } else if (currentLevel === 'MARBLE_ZONE') {
         sky.addColorStop(0, '#2d3436'); // Dark Marble Zone Sky
         sky.addColorStop(0.7, '#d63031'); // Lava Glow
         sky.addColorStop(1, '#ff7675');
+    } else if (currentLevel === 'CHEMICAL_PLANT') {
+        sky.addColorStop(0, '#000000'); // Dark City Sky
+        sky.addColorStop(0.4, '#2c3e50');
+        sky.addColorStop(0.8, '#2980b9');
+        sky.addColorStop(1, '#3498db');
     }
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1124,12 +1420,21 @@ function draw() {
             ctx.arc(tx - 400, canvas.height - 300, 40, 0, Math.PI * 2); // Leaves
             ctx.fill();
         }
-    } else {
+    } else if (currentLevel === 'MARBLE_ZONE') {
         // Marble Zone Background
         ctx.fillStyle = 'rgba(0,0,0,0.2)';
         for (let i = 0; i < 10; i++) {
             const tx = (i * 500 - camera.x * 0.1) % (canvas.width + 500);
             ctx.fillRect(tx - 250, canvas.height - 400, 100, 400); // Pillars
+        }
+    } else if (currentLevel === 'CHEMICAL_PLANT') {
+        // Chemical Plant Background (Pipes and Towers)
+        ctx.fillStyle = 'rgba(243, 156, 18, 0.2)'; // Yellow structures
+        for (let i = 0; i < 6; i++) {
+            const tx = (i * 400 - camera.x * 0.15) % (canvas.width + 400);
+            ctx.fillRect(tx - 200, canvas.height - 500, 120, 500);
+            ctx.fillStyle = 'rgba(0,0,0,0.3)';
+            ctx.fillRect(tx - 150, canvas.height - 450, 20, 450); // Vertical pipes
         }
     }
 
@@ -1150,7 +1455,6 @@ function draw() {
     });
 
     player.draw();
-
     // Draw Boss
     if (boss) {
         ctx.save();
@@ -1177,14 +1481,82 @@ function draw() {
         ctx.fillStyle = 'black'; // Goggles
         ctx.fillRect(-15, -25, 30, 8);
 
-        // Jets
-        ctx.fillStyle = '#fdcb6e';
-        ctx.fillRect(-10, 100, 20, 10 + Math.random() * 20);
+        // Jets / Fire
+        if (boss.isFiring) {
+            ctx.fillStyle = '#ff793f';
+            ctx.beginPath();
+            ctx.moveTo(-15, 100);
+            ctx.lineTo(15, 100);
+            ctx.lineTo(0, 160 + Math.random() * 20);
+            ctx.fill();
+            ctx.fillStyle = '#f1c40f';
+            ctx.beginPath();
+            ctx.arc(0, 100, 10, 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            ctx.fillStyle = '#fdcb6e';
+            ctx.fillRect(-10, 100, 20, 10 + Math.random() * 20);
+        }
 
-        ctx.restore();
+        ctx.restore(); // End Machine Translate
+
+        // --- Swinging Mace (Green Hill only) ---
+        if (currentLevel === 'GREEN_HILL') {
+            ctx.save();
+            // Already in camera space from main draw transform
+            
+            // Draw Chain links
+            const links = 10;
+            for (let i = 0; i <= links; i++) {
+                const ratio = i / links;
+                const lx = (boss.ballX || boss.x) + Math.sin(boss.swingAngle) * (160 * ratio);
+                const ly = ((boss.ballY || boss.y + 60)) + Math.cos(boss.swingAngle) * (160 * ratio);
+                
+                ctx.strokeStyle = '#95a5a6';
+                ctx.lineWidth = 5;
+                ctx.beginPath();
+                ctx.arc(lx, ly, 10, 0, Math.PI * 2);
+                ctx.stroke();
+                // Inner link detail
+                ctx.strokeStyle = '#bdc3c7';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(lx, ly, 6, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+
+            // Draw Giant Ball (Mace)
+            ctx.save();
+            ctx.translate(boss.maceX, boss.maceY);
+            ctx.rotate(boss.swingAngle * 2); 
+            
+            // Ball Base
+            ctx.fillStyle = '#6d4c41'; // Brownish Checkered Base
+            ctx.beginPath();
+            ctx.arc(0, 0, 45, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Checkered Pattern
+            ctx.fillStyle = '#4e342e';
+            for (let a = 0; a < Math.PI * 2; a += Math.PI / 4) {
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.arc(0, 0, 45, a, a + Math.PI / 8);
+                ctx.fill();
+            }
+            
+            ctx.strokeStyle = '#2c3e50';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(-45, -45, 90, 90);
+            ctx.beginPath();
+            ctx.arc(0, 0, 45, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore(); // End Mace Ball Rotate/Translate
+            ctx.restore(); // End Mace World Translate
+        }
     }
 
-    ctx.restore();
+    ctx.restore(); // End world transform (camera)
 
     requestAnimationFrame(gameLoop);
 }
@@ -1195,4 +1567,5 @@ function gameLoop() {
 }
 
 // Kickoff
+player.reset(); // Initialize with default character (Sonic)
 gameLoop();

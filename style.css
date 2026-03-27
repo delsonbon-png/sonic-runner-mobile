@@ -177,6 +177,62 @@ button:active {
 /* Mobile Adjustments */
 @media (max-width: 900px) {
     h1 { font-size: 2.2rem; }
+    .overlay { width: 90%; padding: 30px; }
+}
+
+/* Character Selection */
+#char-selection { width: 850px; }
+#char-selection h2 { font-size: 2rem; color: var(--gold); letter-spacing: 2px; }
+
+.char-grid {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 15px;
+    margin-top: 10px;
+}
+
+.char-card {
+    flex: 0 0 calc(20% - 15px);
+    min-width: 140px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.char-card:hover {
+    transform: translateY(-10px) scale(1.05);
+    background: rgba(255, 255, 255, 0.1);
+    border-color: var(--accents);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+.char-avatar {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    border: 3px solid white;
+    box-shadow: 0 0 15px rgba(0,0,0,0.5);
+}
+
+.sonic-av { background: #1b4dff; }
+.tails-av { background: #ffd100; }
+.knuckles-av { background: #e63946; }
+.amy-av { background: #ff92c3; }
+.sonic-tails-av { background: linear-gradient(135deg, #1b4dff 50%, #ffd100 50%); }
+
+.char-card span {
+    font-weight: 900;
+    font-size: 0.8rem;
+    letter-spacing: 0.5px;
+    text-align: center;
 }
 
 /* Mobile UI Controller */
